@@ -46,7 +46,7 @@ jobs:
           # TODO: use skopio when it becomes available in arm runner
 
           # Build image
-          docker build -t ${IMAGE_NAME:${VERSION} .
+          docker build -t ${IMAGE_NAME}:${VERSION} .
 
           # Parse version
           VERSION=${GITHUB_REF_NAME#v}
