@@ -157,6 +157,8 @@ func (a *Application) scaleDown(ctx context.Context) (undo func(context.Context)
 	)
 	lg.Info("Scaling to 0")
 
+	const fieldManager = "k8s-backup"
+
 	var scaler interface {
 		GetScale(
 			ctx context.Context,
@@ -188,7 +190,7 @@ func (a *Application) scaleDown(ctx context.Context) (undo func(context.Context)
 
 	if _, err := scaler.ApplyScale(ctx, a.resourceName,
 		v1.Scale().WithSpec(v1.ScaleSpec().WithReplicas(0)),
-		metav1.ApplyOptions{},
+		metav1.ApplyOptions{FieldManager: fieldManager},
 	); err != nil {
 		return nil, fmt.Errorf("failed to scale down: %w", err)
 	}
@@ -199,7 +201,7 @@ func (a *Application) scaleDown(ctx context.Context) (undo func(context.Context)
 		lg.Infof("Scaling to %d", scale.Spec.Replicas)
 		if _, err := scaler.ApplyScale(ctx, a.resourceName,
 			v1.Scale().WithSpec(v1.ScaleSpec().WithReplicas(scale.Spec.Replicas)),
-			metav1.ApplyOptions{},
+			metav1.ApplyOptions{FieldManager: fieldManager},
 		); err != nil {
 			return fmt.Errorf("failed to scale up: %w", err)
 		}
@@ -313,9 +315,9 @@ func (a *Application) notify(success bool) {
 
 	var b strings.Builder
 	if success {
-		fmt.Fprintf(&b, "<tg-emoji>whale</tg-emoji> Backup of %s has <b>succeeded</b>\n", a.resourceName)
+		fmt.Fprintf(&b, "<tg-emoji emoji-id=\"5431815452437257407\">🐳</tg-emoji> Backup of %s has <b>succeeded</b>\n", a.resourceName)
 	} else {
-		fmt.Fprintf(&b, "<tg-emoji>space_invader</tg-emoji> Backup of %s has <b>failed</b>\n", a.resourceName)
+		fmt.Fprintf(&b, "<tg-emoji emoji-id=\"5370869711888194012\">👾</tg-emoji> Backup of %s has <b>failed</b>\n", a.resourceName)
 	}
 
 	if a.archiveFile != nil {
