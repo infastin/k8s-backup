@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alecthomas/units"
 	"github.com/caarlos0/env/v11"
 	"github.com/charmbracelet/log"
 	"github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -259,7 +258,7 @@ func (a *Application) archive() (err error) {
 	a.archiveFile = file
 	a.archiveSize = fileInfo.Size()
 
-	lg.Info("Created archive", "size", units.Base2Bytes(a.archiveSize))
+	lg.Info("Created archive", "size", byteCountIEC(a.archiveSize))
 
 	return nil
 }
@@ -273,8 +272,8 @@ type uploadProgress struct {
 func (p *uploadProgress) Read(b []byte) (n int, err error) {
 	p.current += int64(len(b))
 	p.lg.Infof("Uploaded %s / %s (%.2f)",
-		units.Base2Bytes(p.current),
-		units.Base2Bytes(p.total),
+		byteCountIEC(p.current),
+		byteCountIEC(p.total),
 		float64(p.current)/float64(p.total)*100.0)
 	return len(b), nil
 }
@@ -330,7 +329,7 @@ func (a *Application) notify(success bool) {
 	}
 
 	if a.archiveFile != nil {
-		sz := units.Base2Bytes(a.archiveSize)
+		sz := byteCountIEC(a.archiveSize)
 		fmt.Fprintf(&b, "Tarball size: %s\n", sz)
 	}
 
@@ -348,6 +347,20 @@ func (a *Application) notify(success bool) {
 	}); err != nil {
 		log.Error("Failed to send Telegram notification", "error", err)
 	}
+}
+
+func byteCountIEC(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB",
+		float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 func main() {
