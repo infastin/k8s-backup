@@ -82,7 +82,6 @@ jobs:
           echo "MAJOR_MINOR=$(echo ${GITHUB_REF_NAME#v} | awk -F'[.-]' '{print $1 "." $2}')" >> $GITHUB_ENV
 
       - name: Create and push latest manifest image
-        if: ${{ inputs.latest }}
         uses: Noelware/docker-manifest-action@master
         with:
             inputs: ${{ env.IMAGE_NAME }}:latest
