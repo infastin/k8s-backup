@@ -313,9 +313,9 @@ func (a *Application) notify(success bool) {
 
 	var b strings.Builder
 	if success {
-		fmt.Fprintf(&b, "<tg-emoji>🔥</tg-emoji> Backup of %s has <b>succeeded</b>\n", a.resourceName)
+		fmt.Fprintf(&b, "<tg-emoji>whale</tg-emoji> Backup of %s has <b>succeeded</b>\n", a.resourceName)
 	} else {
-		fmt.Fprintf(&b, "<tg-emoji>🚀</tg-emoji> Backup of %s has <b>failed</b>\n", a.resourceName)
+		fmt.Fprintf(&b, "<tg-emoji>space_invader</tg-emoji> Backup of %s has <b>failed</b>\n", a.resourceName)
 	}
 
 	if a.archiveFile != nil {
