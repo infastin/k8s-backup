@@ -141,7 +141,7 @@ func (a *Application) Run() (err error) {
 	}()
 
 	if err := a.upload(context.Background()); err != nil {
-		a.lg.Error("Failed to upload to S3")
+		a.lg.Error("Failed to upload to S3", "error", err)
 		return fmt.Errorf("failed to upload to S3: %w", err)
 	}
 
