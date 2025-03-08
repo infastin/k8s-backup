@@ -21,7 +21,6 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1 "k8s.io/client-go/applyconfigurations/autoscaling/v1"
 	"k8s.io/client-go/kubernetes"
 	appsv1 "k8s.io/client-go/kubernetes/typed/apps/v1"
 	"k8s.io/client-go/rest"
@@ -155,9 +154,6 @@ func (a *Application) scaleDown(ctx context.Context) (undo func(context.Context)
 		"resource", a.config.Resource.ID,
 		"namespace", a.config.Resource.Namespace,
 	)
-	lg.Info("Scaling to 0")
-
-	const fieldManager = "k8s-backup"
 
 	var scaler interface {
 		GetScale(
@@ -166,11 +162,11 @@ func (a *Application) scaleDown(ctx context.Context) (undo func(context.Context)
 			options metav1.GetOptions,
 		) (*autoscalingv1.Scale, error)
 
-		ApplyScale(
+		UpdateScale(
 			ctx context.Context,
 			name string,
-			scale *v1.ScaleApplyConfiguration,
-			opts metav1.ApplyOptions,
+			scale *autoscalingv1.Scale,
+			opts metav1.UpdateOptions,
 		) (*autoscalingv1.Scale, error)
 	}
 
@@ -183,28 +179,41 @@ func (a *Application) scaleDown(ctx context.Context) (undo func(context.Context)
 		scaler = a.appsV1.ReplicaSets(a.config.Resource.Namespace)
 	}
 
-	scale, err := scaler.GetScale(ctx, a.resourceName, metav1.GetOptions{})
+	lg.Info("Trying to get current scale information")
+
+	origScale, err := scaler.GetScale(ctx, a.resourceName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to obtain scale information: %w", err)
 	}
 
-	if _, err := scaler.ApplyScale(ctx, a.resourceName,
-		v1.Scale().WithSpec(v1.ScaleSpec().WithReplicas(0)),
-		metav1.ApplyOptions{FieldManager: fieldManager},
-	); err != nil {
+	lg.Info("Scaling to 0")
+
+	updateScale := *origScale
+	updateScale.Spec.Replicas = 0
+	if _, err := scaler.UpdateScale(ctx, a.resourceName, &updateScale, metav1.UpdateOptions{}); err != nil {
 		return nil, fmt.Errorf("failed to scale down: %w", err)
 	}
 
 	lg.Info("Scaled to 0")
 
 	undo = func(ctx context.Context) error {
-		lg.Infof("Scaling to %d", scale.Spec.Replicas)
-		if _, err := scaler.ApplyScale(ctx, a.resourceName,
-			v1.Scale().WithSpec(v1.ScaleSpec().WithReplicas(scale.Spec.Replicas)),
-			metav1.ApplyOptions{FieldManager: fieldManager},
-		); err != nil {
+		lg.Info("Trying to get current scale information")
+
+		currentScale, err := scaler.GetScale(ctx, a.resourceName, metav1.GetOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to obtain scale information: %w", err)
+		}
+
+		lg.Infof("Scaling to %d", origScale.Spec.Replicas)
+
+		updateScale := *currentScale
+		updateScale.Spec.Replicas = origScale.Spec.Replicas
+		if _, err := scaler.UpdateScale(ctx, a.resourceName, &updateScale, metav1.UpdateOptions{}); err != nil {
 			return fmt.Errorf("failed to scale up: %w", err)
 		}
+
+		lg.Infof("Scaled to %d", origScale.Spec.Replicas)
+
 		return nil
 	}
 
