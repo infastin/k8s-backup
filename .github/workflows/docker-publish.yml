@@ -1,0 +1,104 @@
+name: Docker
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - v*.*.*
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+  build-and-push:
+    strategy:
+      fail-fast: true
+      matrix:
+        arch:
+          - label: ubuntu-24.04
+            tag: linux-amd64
+          - label: ubuntu-24.04-arm
+            tag: linux-arm64
+    runs-on: ${{ matrix.arch.label }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: build-and-push
+        run: |
+          set -xeuo pipefail
+
+          # TODO: use skopio when it becomes available in arm runner
+
+          # Build image
+          docker build -t ${IMAGE_NAME:${VERSION} .
+
+          # Parse version
+          VERSION=${GITHUB_REF_NAME#v}
+          MAJOR_MINOR=$(echo ${VERSION} | awk -F'[.-]' '{print $1 "." $2}')
+
+          # Tag image
+          docker tag ${IMAGE_NAME}:${VERSION} ${IMAGE_NAME}:${VERSION}-\${{ matrix.arch.tag }}
+          docker tag ${IMAGE_NAME}:${VERSION} ${IMAGE_NAME}:${MAJOR_MINOR}-\${{ matrix.arch.tag }}
+          docker tag ${IMAGE_NAME}:${VERSION} ${IMAGE_NAME}:latest-\${{ matrix.arch.tag }}
+
+          # Push images
+          docker push ${IMAGE_NAME}:${VERSION}-\${{ matrix.arch.tag }}
+          docker push ${IMAGE_NAME}:${MAJOR_MINOR}-\${{ matrix.arch.tag }}
+          docker push ${IMAGE_NAME}:latest-\${{ matrix.arch.tag }}
+
+  push-manifest:
+    runs-on: ubuntu-24.04
+    needs:
+      - build-and-push
+    permissions:
+      packages: write
+    steps:
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Parse version
+        run: |
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+          echo "MAJOR_MINOR=$(echo ${GITHUB_REF_NAME#v} | awk -F'[.-]' '{print $1 "." $2}')" >> $GITHUB_ENV
+
+      - name: Create and push latest manifest image
+        if: ${{ inputs.latest }}
+        uses: Noelware/docker-manifest-action@master
+        with:
+            inputs: ${{ env.IMAGE_NAME }}:latest
+            images: ${{ env.IMAGE_NAME }}:latest-linux-amd64,${{ env.IMAGE_NAME }}:latest-linux-arm64
+            push: true
+
+      - name: Create and push ${{ env.VERSION }} manifest image
+        uses: Noelware/docker-manifest-action@master
+        with:
+            inputs: ${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+            images: ${{ env.IMAGE_NAME }}:${{ env.VERSION }}-linux-amd64,${{ env.IMAGE_NAME }}:${{ env.VERSION }}-linux-arm64
+            push: true
+
+      - name: Create and push ${{ env.MAJOR_MINOR }} manifest image
+        uses: Noelware/docker-manifest-action@master
+        with:
+            inputs: ${{ env.IMAGE_NAME }}:${{ env.MAJOR_MINOR }}
+            images: ${{ env.IMAGE_NAME }}:${{ env.MAJOR_MINOR }}-linux-amd64,${{ env.IMAGE_NAME }}:${{ env.MAJOR_MINOR }}-linux-arm64
+            push: true
