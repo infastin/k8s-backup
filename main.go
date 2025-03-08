@@ -70,7 +70,7 @@ func NewApplication() (app *Application, err error) {
 		}
 	}
 
-	app.s3Client, err = minio.New(app.config.S3.EndpointURL, &minio.Options{
+	app.s3Client, err = minio.New(app.config.S3.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(app.config.S3.AccessKeyID, app.config.S3.SecretAccessKey, ""),
 		Secure: !app.config.S3.Unsecure,
 		Region: app.config.S3.Region,
@@ -270,7 +270,7 @@ func (p *uploadProgress) Read(b []byte) (n int, err error) {
 
 func (a *Application) upload(ctx context.Context) (err error) {
 	lg := a.lg.With(
-		"endpoint_url", a.config.S3.EndpointURL,
+		"endpoint", a.config.S3.Endpoint,
 		"bucket", a.config.S3.Bucket,
 		"name", a.archiveName,
 		"file", a.archiveFile.Name(),

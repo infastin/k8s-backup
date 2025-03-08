@@ -10,7 +10,7 @@ import (
 )
 
 type S3Config struct {
-	EndpointURL     string          `env:"ENDPOINT_URL"`
+	Endpoint        string          `env:"ENDPOINT"`
 	Region          string          `env:"REGION"`
 	AccessKeyID     string          `env:"ACCESS_KEY_ID"`
 	SecretAccessKey string          `env:"SECRET_ACCESS_KEY"`
@@ -22,7 +22,7 @@ type S3Config struct {
 
 func (c *S3Config) Validate() error {
 	return validation.All(
-		validation.String(c.EndpointURL, "endpoint_url").If(c.EndpointURL != "").With(isstr.URL).EndIf(),
+		validation.String(c.Endpoint, "endpoint").If(c.Endpoint != "").With(isstr.URL).EndIf(),
 		validation.String(c.AccessKeyID, "access_key_id").Required(true),
 		validation.String(c.SecretAccessKey, "secret_access_key").Required(true),
 		validation.String(c.Bucket, "bucket").Required(true),

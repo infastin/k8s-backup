@@ -23,8 +23,8 @@ creates archive of the specified directory, uploads it to S3 and scales workload
     <td>Directory to backup.</td>
   </tr>
   <tr>
-    <td>S3_ENDPOINT_URL</td>
-    <td>S3 endpoint url.</td>
+    <td>S3_ENDPOINT</td>
+    <td>S3 endpoint address (domain or ip address).</td>
   </tr>
   <tr>
     <td>S3_REGION</td>
