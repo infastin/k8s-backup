@@ -63,3 +63,18 @@ creates an archive of the specified directory, uploads it to S3 and scales the w
     <td>Telegram chat id where notifications should be sent.</td>
   </tr>
 </table>
+
+## Kubernets Role
+
+This tool only uses `get` and `update` requests on `deployments/scale`,
+so a rule like this will suffice:
+
+```yaml
+apiGroups:
+  - apps
+resources:
+  - deployments/scale
+verbs:
+  - get
+  - update
+```
