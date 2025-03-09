@@ -299,7 +299,7 @@ func (a *Application) upload(ctx context.Context) (err error) {
 		a.archiveSize,
 		minio.PutObjectOptions{
 			Progress: &uploadProgress{
-				lg:      a.lg.With("name", a.archiveName),
+				lg:      log.With("name", a.archiveName),
 				current: 0,
 				total:   a.archiveSize,
 			},
@@ -310,6 +310,8 @@ func (a *Application) upload(ctx context.Context) (err error) {
 	); err != nil {
 		return fmt.Errorf("failed to upload archive to S3: %w", err)
 	}
+
+	lg.Info("Uploaded archive to S3")
 
 	return nil
 }
