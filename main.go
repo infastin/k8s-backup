@@ -84,7 +84,10 @@ func NewApplication() (app *Application, err error) {
 	app.resourceName = resourceParts[1]
 
 	app.logData = new(bytes.Buffer)
-	app.lg = log.New(io.MultiWriter(os.Stdout, app.logData))
+	app.lg = log.NewWithOptions(io.MultiWriter(os.Stdout, app.logData), log.Options{
+		ReportTimestamp: true,
+		Formatter:       log.TextFormatter,
+	})
 
 	return app, nil
 }
