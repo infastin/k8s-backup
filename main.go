@@ -304,7 +304,7 @@ func (a *Application) upload(ctx context.Context) (err error) {
 				total:   a.archiveSize,
 			},
 			StorageClass: a.config.S3.StorageClass,
-			ContentType:  "application/tar+gzip",
+			ContentType:  "application/gzip",
 			Expires:      expires,
 		},
 	); err != nil {
