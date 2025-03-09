@@ -64,7 +64,7 @@ creates an archive of the specified directory, uploads it to S3 and scales the w
   </tr>
 </table>
 
-## Kubernets Role
+## Kubernetes Role
 
 This tool only uses `get` and `update` requests on `deployments/scale`,
 so a rule like this will suffice:
