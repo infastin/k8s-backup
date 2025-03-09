@@ -1,6 +1,6 @@
 # k8s-backup
 
-Very simple backup tool that scales down a workload (Deployment/StatefulSet/ReplicaSet),
+Very simple backup tool for Kubernetes that scales down a workload (Deployment/StatefulSet/ReplicaSet),
 creates archive of the specified directory, uploads it to S3 and scales workload up.
 
 ## Configuration
