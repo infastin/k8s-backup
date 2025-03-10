@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -18,17 +19,17 @@ import (
 	"github.com/infastin/gorack/errdefer"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	autoscalingv1 "k8s.io/api/autoscaling/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
-	appsv1 "k8s.io/client-go/kubernetes/typed/apps/v1"
 	"k8s.io/client-go/rest"
 )
 
 type Application struct {
 	clientset    *kubernetes.Clientset
-	appsV1       appsv1.AppsV1Interface
 	resourceType string
+	resourceKind string
 	resourceName string
 	config       Config
 	tgBot        *tgbotapi.BotAPI
@@ -77,11 +78,19 @@ func NewApplication() (app *Application, err error) {
 		return nil, fmt.Errorf("failed to create S3 client: %w", err)
 	}
 
-	app.appsV1 = app.clientset.AppsV1()
-
 	resourceParts := strings.SplitN(app.config.Resource.ID, "/", 2)
-	app.resourceType = resourceParts[0]
 	app.resourceName = resourceParts[1]
+	switch resourceParts[0] {
+	case "deployment", "deployments":
+		app.resourceType = "deployments"
+		app.resourceKind = "Deployment"
+	case "statefulset", "statefulsets":
+		app.resourceType = "statefulsets"
+		app.resourceKind = "StatefulSet"
+	case "replicaset", "replicasets":
+		app.resourceType = "replicasets"
+		app.resourceKind = "ReplicaSet"
+	}
 
 	app.logData = new(bytes.Buffer)
 	app.lg = log.NewWithOptions(io.MultiWriter(os.Stdout, app.logData), log.Options{
@@ -97,20 +106,28 @@ func (a *Application) Run() (err error) {
 		a.notify(err == nil)
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	lg := a.lg.With(
+		"resource", a.config.Resource.ID,
+		"namespace", a.config.Resource.Namespace,
+	)
+
+	ctx := log.WithContext(context.Background(), lg)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 
 	scaleUp, err := a.scaleDown(ctx)
 	if err != nil {
-		a.lg.Error("Failed to scale down",
-			"resource", a.config.Resource.ID,
-			"namespace", a.config.Resource.Namespace,
-			"error", err,
-		)
+		lg.Error("Failed to scale down", "error", err)
 		return fmt.Errorf("failed to scale down: %w", err)
 	}
 	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		lg := a.lg.With(
+			"resource", a.config.Resource.ID,
+			"namespace", a.config.Resource.Namespace,
+		)
+
+		ctx := log.WithContext(context.Background(), lg)
+		ctx, cancel := context.WithTimeout(ctx, time.Minute)
 		defer cancel()
 
 		scaleErr := scaleUp(ctx)
@@ -118,11 +135,7 @@ func (a *Application) Run() (err error) {
 			return
 		}
 
-		a.lg.Error("Failed to scale up",
-			"resource", a.config.Resource.ID,
-			"namespace", a.config.Resource.Namespace,
-			"error", scaleErr,
-		)
+		lg.Error("Failed to scale up", "error", scaleErr)
 
 		scaleErr = fmt.Errorf("failed to scale up: %w", err)
 		if err != nil {
@@ -132,8 +145,11 @@ func (a *Application) Run() (err error) {
 		}
 	}()
 
-	if err := a.archive(); err != nil {
-		a.lg.Error("Failed to archive", "directory", a.config.Backup.Directory)
+	lg = a.lg.With("directory", a.config.Backup.Directory)
+	ctx = log.WithContext(context.Background(), lg)
+
+	if err := a.archive(ctx); err != nil {
+		lg.Error("Failed to archive", "error", err)
 		return fmt.Errorf("failed to archive: %w", err)
 	}
 	defer func() {
@@ -143,7 +159,15 @@ func (a *Application) Run() (err error) {
 		}
 	}()
 
-	if err := a.upload(context.Background()); err != nil {
+	lg = a.lg.With(
+		"endpoint", a.config.S3.Endpoint,
+		"bucket", a.config.S3.Bucket,
+		"name", a.archiveName,
+		"file", a.archiveFile.Name(),
+	)
+	ctx = log.WithContext(context.Background(), lg)
+
+	if err := a.upload(ctx); err != nil {
 		a.lg.Error("Failed to upload to S3", "error", err)
 		return fmt.Errorf("failed to upload to S3: %w", err)
 	}
@@ -151,84 +175,164 @@ func (a *Application) Run() (err error) {
 	return nil
 }
 
-func (a *Application) scaleDown(ctx context.Context) (undo func(context.Context) error, err error) {
-	lg := a.lg.With(
-		"resource", a.config.Resource.ID,
-		"namespace", a.config.Resource.Namespace,
-	)
+func (a *Application) getPodTemplateHash(ctx context.Context) (hash string, err error) {
+	lg := log.FromContext(ctx)
+	lg.Info("Trying to get pod template hash")
 
-	var scaler interface {
-		GetScale(
-			ctx context.Context,
-			name string,
-			options metav1.GetOptions,
-		) (*autoscalingv1.Scale, error)
+	appsV1 := a.clientset.AppsV1()
+	replicasets := appsV1.ReplicaSets(a.config.Resource.Namespace)
 
-		UpdateScale(
-			ctx context.Context,
-			name string,
-			scale *autoscalingv1.Scale,
-			opts metav1.UpdateOptions,
-		) (*autoscalingv1.Scale, error)
+	var replicaset *appsv1.ReplicaSet
+	if a.resourceName != "replicasets" {
+		list, err := replicasets.List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return "", fmt.Errorf("failed to list replicasets: %w", err)
+		}
+		for i := range list.Items {
+			item := &list.Items[i]
+			if item.Kind == a.resourceKind && item.Name == a.resourceName {
+				replicaset = item
+				break
+			}
+		}
+	} else {
+		replicaset, err = replicasets.Get(ctx, a.resourceName, metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("failed to get replicaset: %w", err)
+		}
 	}
 
-	switch a.resourceType {
-	case "deployment", "deployments":
-		scaler = a.appsV1.Deployments(a.config.Resource.Namespace)
-	case "statefulset", "statefulsets":
-		scaler = a.appsV1.StatefulSets(a.config.Resource.Namespace)
-	case "replicaset", "replicasets":
-		scaler = a.appsV1.ReplicaSets(a.config.Resource.Namespace)
+	hash = replicaset.Labels["pod-template-hash"]
+	lg.Info("Got pod template hash", "hash", hash)
+
+	return hash, nil
+}
+
+type (
+	objectForReplicas struct {
+		Replicas int `json:"replicas"`
 	}
 
-	lg.Info("Trying to get current scale information")
+	objectForSpec struct {
+		Spec objectForReplicas `json:"spec"`
+	}
+)
 
-	origScale, err := scaler.GetScale(ctx, a.resourceName, metav1.GetOptions{})
+func (a *Application) getReplicas(ctx context.Context) (replicas int, err error) {
+	lg := log.FromContext(ctx)
+	lg.Infof("Trying to get current number of replicas")
+
+	data, err := a.clientset.AppsV1().RESTClient().
+		Get().
+		Namespace(a.config.Resource.Namespace).
+		Resource(a.resourceType).
+		Name(a.resourceName).
+		SubResource("scale").
+		DoRaw(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to obtain scale information: %w", err)
+		return 0, fmt.Errorf("failed to get resource: %w", err)
 	}
 
-	lg.Info("Scaling to 0")
+	var obj objectForSpec
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return 0, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
 
-	updateScale := *origScale
-	updateScale.Spec.Replicas = 0
-	if _, err := scaler.UpdateScale(ctx, a.resourceName, &updateScale, metav1.UpdateOptions{}); err != nil {
+	replicas = obj.Spec.Replicas
+	lg.Info("Got number of replicas", "count", replicas)
+
+	return replicas, nil
+}
+
+func (a *Application) scale(ctx context.Context, replicas int) (err error) {
+	lg := log.FromContext(ctx)
+	lg.Infof("Trying to scale to %d", replicas)
+
+	spec := objectForSpec{
+		Spec: objectForReplicas{Replicas: replicas},
+	}
+
+	patch, err := json.Marshal(&spec)
+	if err != nil {
+		return fmt.Errorf("failed to marshal patch: %w", err)
+	}
+
+	_, err = a.clientset.AppsV1().RESTClient().
+		Patch(types.MergePatchType).
+		Namespace(a.config.Resource.Namespace).
+		Resource(a.resourceType).
+		Name(a.resourceName).
+		SubResource("scale").
+		Body(patch).
+		DoRaw(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to scale to %d: %w", replicas, err)
+	}
+
+	lg.Infof("Successfuly scaled to %d", replicas)
+
+	return nil
+}
+
+func (a *Application) wait(ctx context.Context) (err error) {
+	lg := log.FromContext(ctx)
+	lg.Info("Waiting for pods to terminate")
+
+	hash, err := a.getPodTemplateHash(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get pod template hash: %w", err)
+	}
+	selector := fmt.Sprintf("pod-template-hash=%s", hash)
+
+	for {
+		list, err := a.clientset.CoreV1().
+			Pods(a.config.Resource.Namespace).
+			List(ctx, metav1.ListOptions{LabelSelector: selector})
+		if err != nil {
+			return fmt.Errorf("failed to list pods: %w", err)
+		}
+
+		if len(list.Items) == 0 {
+			break
+		}
+		time.Sleep(5 * time.Second)
+	}
+
+	lg.Info("Pods have terminated")
+
+	return nil
+}
+
+func (a *Application) scaleDown(ctx context.Context) (undo func(context.Context) error, err error) {
+	replicas, err := a.getReplicas(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current number of replicas: %w", err)
+	}
+
+	if err := a.scale(ctx, 0); err != nil {
 		return nil, fmt.Errorf("failed to scale down: %w", err)
 	}
 
-	lg.Info("Scaled to 0")
+	if a.config.Resource.Wait {
+		if err := a.wait(ctx); err != nil {
+			log.Warn("Failed to wait for pods to terminate", "error", err)
+		}
+	}
 
 	undo = func(ctx context.Context) error {
-		lg.Info("Trying to get current scale information")
-
-		currentScale, err := scaler.GetScale(ctx, a.resourceName, metav1.GetOptions{})
-		if err != nil {
-			return fmt.Errorf("failed to obtain scale information: %w", err)
-		}
-
-		lg.Infof("Scaling to %d", origScale.Spec.Replicas)
-
-		updateScale := *currentScale
-		updateScale.Spec.Replicas = origScale.Spec.Replicas
-		if _, err := scaler.UpdateScale(ctx, a.resourceName, &updateScale, metav1.UpdateOptions{}); err != nil {
+		if err := a.scale(ctx, replicas); err != nil {
 			return fmt.Errorf("failed to scale up: %w", err)
 		}
-
-		lg.Infof("Scaled to %d", origScale.Spec.Replicas)
-
 		return nil
 	}
 
 	return undo, nil
 }
 
-func (a *Application) archive() (err error) {
+func (a *Application) archive(ctx context.Context) (err error) {
 	name := fmt.Sprintf("backup-%s.tar.gz", time.Now().Format(time.RFC3339))
 
-	lg := a.lg.With(
-		"name", name,
-		"backup_directory", a.config.Backup.Directory,
-	)
+	lg := log.FromContext(ctx).With("name", name)
 	lg.Info("Creating archive")
 
 	file, err := os.Create(filepath.Join(os.TempDir(), name))
@@ -282,12 +386,7 @@ func (p *uploadProgress) Read(b []byte) (n int, err error) {
 }
 
 func (a *Application) upload(ctx context.Context) (err error) {
-	lg := a.lg.With(
-		"endpoint", a.config.S3.Endpoint,
-		"bucket", a.config.S3.Bucket,
-		"name", a.archiveName,
-		"file", a.archiveFile.Name(),
-	)
+	lg := log.FromContext(ctx)
 	lg.Info("Uploading archive to S3")
 
 	var expires time.Time

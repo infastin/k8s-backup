@@ -48,6 +48,7 @@ func (c *TelegramConfig) Validate() error {
 type ResourceConfig struct {
 	ID        string `env:"ID"`
 	Namespace string `env:"NAMESPACE"`
+	Wait      bool   `env:"WAIT"`
 }
 
 func (c *ResourceConfig) Validate() error {

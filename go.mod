@@ -3,7 +3,6 @@ module github.com/infastin/k8s-backup
 go 1.23.6
 
 require (
-	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/charmbracelet/log v0.4.0
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
