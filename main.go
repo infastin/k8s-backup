@@ -190,9 +190,11 @@ func (a *Application) getPodTemplateHash(ctx context.Context) (hash string, err 
 		}
 		for i := range list.Items {
 			item := &list.Items[i]
-			if item.Kind == a.resourceKind && item.Name == a.resourceName {
-				replicaset = item
-				break
+			for _, ref := range item.OwnerReferences {
+				if ref.Kind == a.resourceKind && ref.Name == a.resourceName {
+					replicaset = item
+					break
+				}
 			}
 		}
 	} else {
