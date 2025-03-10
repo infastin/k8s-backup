@@ -315,7 +315,7 @@ func (a *Application) scaleDown(ctx context.Context) (undo func(context.Context)
 
 	if a.config.Resource.Wait {
 		if err := a.wait(ctx); err != nil {
-			log.Warn("Failed to wait for pods to terminate", "error", err)
+			a.lg.Warn("Failed to wait for pods to terminate", "error", err)
 		}
 	}
 

@@ -100,7 +100,7 @@ verbs:
 
 However, if `RESOURCE_WAIT` is set,
 this tool also does `get` requests on `apps/replicasets` and `pods`.
-So, you also will need those rules:
+Therefore, you will also need these rules:
 
 ```yaml
 - apiGroups:
