@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -202,6 +203,9 @@ func (a *Application) getPodTemplateHash(ctx context.Context) (hash string, err 
 		if err != nil {
 			return "", fmt.Errorf("failed to get replicaset: %w", err)
 		}
+	}
+	if replicaset == nil {
+		return "", errors.New("could not find replicaset")
 	}
 
 	hash = replicaset.Labels["pod-template-hash"]
