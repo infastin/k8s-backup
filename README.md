@@ -99,7 +99,7 @@ verbs:
 ```
 
 However, if `RESOURCE_WAIT` is set,
-this tool also does `get` requests on `apps/replicasets` and `pods`.
+this tool also does `list` requests on `apps/replicasets` and `pods`.
 Therefore, you will also need these rules:
 
 ```yaml
@@ -108,11 +108,11 @@ Therefore, you will also need these rules:
   resources:
     - replcasets
   verbs:
-    - get
+    - list
 - apiGroups:
     - ""
   resources:
     - pods
   verbs:
-    - get
+    - list
 ```
