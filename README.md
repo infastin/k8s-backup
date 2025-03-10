@@ -106,7 +106,7 @@ Therefore, you will also need these rules:
 - apiGroups:
     - apps
   resources:
-    - replcasets
+    - replicasets
   verbs:
     - list
 - apiGroups:
