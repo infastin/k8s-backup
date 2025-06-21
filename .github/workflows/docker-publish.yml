@@ -82,21 +82,21 @@ jobs:
           echo "MAJOR_MINOR=$(echo ${GITHUB_REF_NAME#v} | awk -F'[.-]' '{print $1 "." $2}')" >> $GITHUB_ENV
 
       - name: Create and push latest manifest image
-        uses: Noelware/docker-manifest-action@master
+        uses: Noelware/docker-manifest-action@0.4.3
         with:
             inputs: ${{ env.IMAGE_NAME }}:latest
             images: ${{ env.IMAGE_NAME }}:latest-linux-amd64,${{ env.IMAGE_NAME }}:latest-linux-arm64
             push: true
 
       - name: Create and push ${{ env.VERSION }} manifest image
-        uses: Noelware/docker-manifest-action@master
+        uses: Noelware/docker-manifest-action@0.4.3
         with:
             inputs: ${{ env.IMAGE_NAME }}:${{ env.VERSION }}
             images: ${{ env.IMAGE_NAME }}:${{ env.VERSION }}-linux-amd64,${{ env.IMAGE_NAME }}:${{ env.VERSION }}-linux-arm64
             push: true
 
       - name: Create and push ${{ env.MAJOR_MINOR }} manifest image
-        uses: Noelware/docker-manifest-action@master
+        uses: Noelware/docker-manifest-action@0.4.3
         with:
             inputs: ${{ env.IMAGE_NAME }}:${{ env.MAJOR_MINOR }}
             images: ${{ env.IMAGE_NAME }}:${{ env.MAJOR_MINOR }}-linux-amd64,${{ env.IMAGE_NAME }}:${{ env.MAJOR_MINOR }}-linux-arm64
